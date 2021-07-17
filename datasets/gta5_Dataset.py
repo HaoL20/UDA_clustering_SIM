@@ -35,6 +35,8 @@ class GTA5_Dataset(City_Dataset):
         self.random_mirror = args.random_mirror
         self.resize = args.resize
         self.gaussian_blur = args.gaussian_blur
+        self.color_jitter = args.color_jitter
+
         self.load_pseudo = False
 
         ###

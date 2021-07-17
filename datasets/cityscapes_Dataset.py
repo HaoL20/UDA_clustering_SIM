@@ -227,7 +227,7 @@ class City_Dataset(data.Dataset):
         if self.args.gaussian_blur:  # default = True, when gen pseudo,set to False
             # gaussian blur as in PSP
             if random.random() < 0.5:
-                img = img.filter(ImageFilter.GaussianBlur(radius=random.random()))
+                img = img.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.15, 1.15)))
         # final transform
         if mask:
             img, mask = self._img_transform(img), self._mask_transform(mask)
@@ -244,7 +244,7 @@ class City_Dataset(data.Dataset):
                 mask = mask.resize(self.crop_size, Image.NEAREST)
 
         # final transform
-        img, mask = self._img_transform(img), self._mask_transform(mask)
+        img, mask = self._img_transform(img, val=True), self._mask_transform(mask)
         return img, mask
 
     def _pseudo_train_sync_transform(self, img, mask):
@@ -265,7 +265,7 @@ class City_Dataset(data.Dataset):
         if self.gaussian_blur:  # default = True
             # gaussian blur as in PSP
             if random.random() < 0.5:
-                img = img.filter(ImageFilter.GaussianBlur(radius=random.uniform()))
+                img = img.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.15, 1.15)))
 
         # final transform
         img = self._img_transform(img)

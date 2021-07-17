@@ -25,17 +25,17 @@ DEBUG = False
 
 datasets_path={
     'cityscapes': {
-        'data_root_path': '/home/featurize/data/cityscape',
+        'data_root_path': '/media/haol/windows/Cityscapes',
         'list_path': './datasets/Cityscapes',
     },
 
     'gta5': {
-        'data_root_path': '/home/haol/data/Dataset/original/GTA5',
+        'data_root_path': '/media/haol/windows/GTA5',
         'list_path': './datasets/GTA5',
     },
 
     'synthia': {
-        'data_root_path': '/home/featurize/data/SYNTHIA',
+        'data_root_path': '/media/haol/windows/SYNTHIA',
         'list_path': './datasets/SYNTHIA',
     }
     }
@@ -340,14 +340,14 @@ class Trainer():
                 self.Eval.add_batch(label, argpred)
                 
 
-                #show val result on tensorboard
-                images_inv = inv_preprocess(x.clone().cpu(), self.args.show_num_images, numpy_transform=self.args.numpy_transform)
-                labels_colors = decode_labels(label, self.args.num_classes, self.args.show_num_images)
-                preds_colors = decode_labels(argpred, self.args.num_classes, self.args.show_num_images)
-                for index, (img, lab, color_pred) in enumerate(zip(images_inv, labels_colors, preds_colors)):
-                    self.writer.add_image(str(index)+'/Images', img, self.current_epoch)
-                    self.writer.add_image(str(index)+'/Labels', lab, self.current_epoch)
-                    self.writer.add_image(str(index)+'/preds', color_pred, self.current_epoch)
+            #show val result on tensorboard
+            images_inv = inv_preprocess(x.clone().cpu(), self.args.show_num_images, numpy_transform=self.args.numpy_transform)
+            labels_colors = decode_labels(label, self.args.num_classes, self.args.show_num_images)
+            preds_colors = decode_labels(argpred, self.args.num_classes, self.args.show_num_images)
+            for index, (img, lab, color_pred) in enumerate(zip(images_inv, labels_colors, preds_colors)):
+                self.writer.add_image(str(index)+'/Images', img, self.current_epoch)
+                self.writer.add_image(str(index)+'/Labels', lab, self.current_epoch)
+                self.writer.add_image(str(index)+'/preds', color_pred, self.current_epoch)
 
             if self.args.class_16:
                 def val_info(Eval, name):
