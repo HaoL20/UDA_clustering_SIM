@@ -558,8 +558,8 @@ def add_train_args(arg_parser):
     arg_parser.add_argument('--random_mirror', default=True, type=str2bool, help='add random_mirror')
     arg_parser.add_argument('--resize', default=True, type=str2bool, help='resize')
     arg_parser.add_argument('--gaussian_blur', default=True, type=str2bool, help='add gaussian_blur')
-    arg_parser.add_argument('--color_jitter', default=True, type=str2bool, help='add color_jitter')
-    arg_parser.add_argument('--numpy_transform', default=True, type=str2bool, help='image transform with numpy style')
+    arg_parser.add_argument('--color_jitter', default=False, type=str2bool, help='add color_jitter')
+    arg_parser.add_argument('--numpy_transform', default=False, type=str2bool, help='image transform with numpy style')
 
     # optimization related arguments
     arg_parser.add_argument('--optim', default="SGD", type=str, help='optimizer')
