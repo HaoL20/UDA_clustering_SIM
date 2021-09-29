@@ -36,7 +36,7 @@ class feat_reg_ST_loss(nn.Module):
         self.target_softmax = None
         self.target_softmax_full = None
 
-        self.dist_func = None  # L0¡¢L1¡¢L2...
+        self.dist_func = None  # L0ï¿½ï¿½L1ï¿½ï¿½L2...
 
         self.B = None
         self.Hs, self.Ws, self.hs, self.ws = None, None, None, None
