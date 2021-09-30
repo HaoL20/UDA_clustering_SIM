@@ -362,9 +362,7 @@ class UDATrainer(Trainer):
         for batch_s, batch_t in tqdm_epoch:
             self.poly_lr_scheduler(optimizer=self.optimizer, init_lr=self.args.lr)
             self.writer.add_scalar('learning_rate', self.optimizer.param_groups[0]["lr"], self.current_iter)
-
             if self.current_iter < 1: memory_check('Start (step)')
-
             #######################
             # Source forward step #
             #######################

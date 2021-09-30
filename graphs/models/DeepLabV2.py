@@ -99,7 +99,7 @@ class Bottleneck(nn.Module):
 #             out += self.conv2d_list[i + 1](x)
 #             return out
 
-
+# 修改的分类头加入了SE模块和Dropout，用于计算不确定度。
 class Classifier_Module(nn.Module):
     def __init__(self, inplanes, dilation_series, padding_series, num_classes, norm_style = 'bn', droprate = 0.1, use_se = False):
         super(Classifier_Module, self).__init__()

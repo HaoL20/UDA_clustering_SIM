@@ -194,6 +194,7 @@ class City_Dataset(data.Dataset):
             image, mask = self._pseudo_train_sync_transform(image, mask)
             # return image, mask[0], mask[1], id_gt
             return image, mask[0], id_gt  # 只返回获取标签
+
         ###
         gt_image_path = self.data_path + id_gt
 
@@ -276,7 +277,7 @@ class City_Dataset(data.Dataset):
     def _img_transform(self, image, val=False):
         if self.args.numpy_transform == True and self.color_jitter == True:
             assert False,"can`t color_jitter with numpy_transform"
-        if self.args.numpy_transform:  # default = True
+        if self.args.numpy_transform:  # default = False
             image = np.asarray(image, np.float32)
             image = image[:, :, ::-1]  # change to BGR
             image -= IMG_MEAN
