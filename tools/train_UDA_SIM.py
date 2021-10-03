@@ -289,9 +289,14 @@ class UDATrainer(Trainer):
         self.target_dataloader = data.DataLoader(target_dataset, shuffle=True, **dataloader_kwargs)
 
     def main(self):  # train_round->train(父类方法)->train_one_epoch + validate(父类方法)
+        # display command
+        argv = sys.argv
+        self.logger.info("command:")
+        self.logger.info("python " + ' '.join(argv))
         # display args details
         self.logger.info("Global configuration as follows:")
-        for key, val in vars(self.args).items():
+        params = sorted(vars(self.args).items())
+        for key, val in params:
             self.logger.info("{:25} {}".format(key, val))
 
         # choose cuda
