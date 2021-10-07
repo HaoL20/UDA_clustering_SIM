@@ -68,6 +68,7 @@ class feat_reg_ST_loss(nn.Module):
         """
         self.B = softmax.size(0)
         assert self.F == feat.size(1)
+        # 获取源域和目标域的特征图、预测结果的尺度
         if domain == 'source':
             self.Hs, self.Ws, self.hs, self.ws = softmax.size(2), softmax.size(3), feat.size(2), feat.size(3)
         else:
@@ -84,12 +85,13 @@ class feat_reg_ST_loss(nn.Module):
         # if argmax_dws_type == 'bilinear':
         #     softmax_dws = F.interpolate(softmax, size=(h, w), mode='bilinear', align_corners=True)  # size B x C x h x w
         #     _, right_pre_dws = torch.max(softmax_dws, dim=1)  # size B x h x w
-        gt_dws = torch.squeeze(F.interpolate(torch.unsqueeze(gt.float(), dim=1), size=(h, w), mode='nearest'), dim=1)  # size B x h x w
+
+        gt_dws = torch.squeeze(F.interpolate(torch.unsqueeze(gt.float(), dim=1), size=(h, w), mode='nearest'), dim=1)  # size B x h x w， GT下采样到和特征图一样大
 
         # Only compute the correct prediction map
         # right_pre_dws[right_pre_dws != gt_dws] = self.ignore_index  # size B x h x w
         # right_pre_dws = right_pre_dws.view(-1)  # size N
-        gt_dws = gt_dws.view(-1)
+        gt_dws = gt_dws.view(-1)    # size N（N = B x h x w）
 
         if domain == 'source':
             self.source_feat = feat  # N x F, feat vector of each pixel
@@ -174,6 +176,7 @@ class feat_reg_ST_loss(nn.Module):
         """
         centroid_list_source_BG, centroid_list_target_BG = [], []
 
+        ## 计算源域和目标域的背景（stuff）的中心
         for label_i in self.BG_LABEL:
             # boolean tensor, True where features belong to class label_i
             source_mask = torch.eq(self.source_gt.detach(), label_i)  # size N
@@ -202,6 +205,7 @@ class feat_reg_ST_loss(nn.Module):
         self.centroids_source_BG = torch.squeeze(torch.stack(centroid_list_source_BG, dim=0))  # size C_BG x 1 x F -> C_BG x F
         self.centroids_target_BG = torch.squeeze(torch.stack(centroid_list_target_BG, dim=0))  # size C_BG x 1 x F -> C_BG x F
 
+        # 指数平均移动
         if centroids_smoothing >= 0.:
             if self.centroids_source_BG_avg is None: self.centroids_source_BG_avg = self.centroids_source_BG  # size C_BG x F
             # In early steps there may be no centroids for small classes, so avoid averaging with Inf values by replacing them with values of current step
@@ -220,37 +224,43 @@ class feat_reg_ST_loss(nn.Module):
 
     def computer_things(self, centroids_smoothing=-1):
         """
+        对于前景（things），计算每一个前景的中心，
          for FG(things), compute the FG centroid of source, instance feat list of target and source instance feature pool
         :param centroids_smoothing: if > 0 new centroids are updated over avg past ones
+
         """
         centroid_list_source_FG = []
-        ins_feat_list_target = [[] for _ in range(len(self.FG_LABEL))]  # list size: C_FB x N_ins_i x F
+        ins_feat_list_target = [[] for _ in range(len(self.FG_LABEL))]  # list size: C_FB x N_ins_i x F，每执行一次都会清空
 
         for i, label_i in enumerate(self.FG_LABEL):
 
-            source_mask = torch.eq(self.source_gt.detach(), label_i)  # size N
+            ## 计算源域的类别label_i的特征向量中心
+            source_mask = torch.eq(self.source_gt.detach(), label_i)  # size N，类别label_i的掩码
             target_mask = torch.eq(self.target_gt.detach(), label_i)  # size N
 
-            source_feat_i = self.source_feat[source_mask, :]  # size Ns_i x F
+            source_feat_i = self.source_feat[source_mask, :]  # size Ns_i x F， 类别label_i的特征向量
             # compute the FG centroid  of source
             if source_feat_i.size(0) > 0:
-                centroid = torch.mean(source_feat_i, dim=0, keepdim=True)  # size 1 x F
+                centroid = torch.mean(source_feat_i, dim=0, keepdim=True)  # size 1 x F 类别label_i的平均特征向量
                 centroid_list_source_FG.append(centroid)
             else:
                 centroid = torch.tensor([[float("Inf")] * self.F], dtype=torch.float).to(self.device)  # size 1 x F
                 centroid_list_source_FG.append(centroid)
+            #################
 
+            ## 计算源域和目标域的类别label_i的实例特征池
             source_mask_full = source_mask.view(self.B, self.hs, self.ws)  # size N -> B x h x w
             target_mask_full = target_mask.view(self.B, self.ht, self.wt)  # size N -> B x h x w
 
-            # Compute the instances Ids and area of class i
+            # Compute the instances Ids and area of class i，利用连通区域算法计算每一个实例的面积，以及对应的编号
             source_ins_Ids, source_ins_area = self.get_instances(source_mask_full)  # size N
             target_ins_Ids, target_ins_area = self.get_instances(target_mask_full)  # size N
+
 
             # descending order of source instance area
             sort_argmax = np.argsort(source_ins_area)[::-1]
             # compute source instance feature pool
-            for j in range(min(10, len(sort_argmax))):
+            for j in range(min(10, len(sort_argmax))):  # 遍历面积最大的前10个实例
                 # current instance Id (instance Id stard with 0!!!!)
                 ins_Id_j = sort_argmax[j] + 1
 
@@ -262,9 +272,9 @@ class feat_reg_ST_loss(nn.Module):
                 ins_feat_j_avg = torch.mean(ins_feat_j, dim=0, keepdim=True)  # size 1 x F
 
                 # compute the index of the instance feature in the source instance feature pool
-                pos = int(self.pool_ptr[i] % self.pool_capacity)
+                pos = int(self.pool_ptr[i] % self.pool_capacity)        # 计算在特征池中的位置
                 # put in the pool
-                self.ins_feat_pool_source[i, pos, :] = ins_feat_j_avg.detach().clone()
+                self.ins_feat_pool_source[i, pos, :] = ins_feat_j_avg.detach().clone()  # 加入特征池
                 self.pool_ptr[i] += 1
 
             # descending order of target instance area
@@ -293,6 +303,7 @@ class feat_reg_ST_loss(nn.Module):
 
     def stuff_alignment(self):
 
+        # 计算源域和目标域的背景类中心的距离
         centroids_source = self.centroids_source_BG
         centroids_target = self.centroids_target_BG
 
@@ -352,7 +363,7 @@ class feat_reg_ST_loss(nn.Module):
         # FG
         dist_fg, count_fg = 0, 0
         centroids_source = self.centroids_source_FG
-        indices = [i for i in range(self.C_fg) if (centroids_source[i, 0] == float('Inf')).item() == 0]
+        indices = [i for i in range(self.C_fg) if (centroids_source[i, 0] == float('Inf')).item() == 0] # 只计算没有inf值的前景类
         count_fg += len(indices)
         if len(indices) == 1:
             dist_fg = torch.tensor([0]).cuda()
@@ -484,6 +495,9 @@ class feat_reg_ST_loss(nn.Module):
 
     def forward(self, **kwargs):
 
+        # 特征处理
+        # 传入特征图、预测结果预测结果softmax（置信度）、GT、源域还是目标域
+        # 计算self.source_feat、self.source_gt
         self.feature_processing(feat=kwargs.get('source_feat'), softmax=kwargs.get('source_prob'), gt=kwargs.get('source_gt'), domain='source')
         self.feature_processing(feat=kwargs.get('target_feat'), softmax=kwargs.get('target_prob'), gt=kwargs.get('target_gt'), domain='target')
 
@@ -492,6 +506,9 @@ class feat_reg_ST_loss(nn.Module):
         self.computer_things(centroids_smoothing=smo_coeff)
         self.computer_stuff(centroids_smoothing=smo_coeff)
 
+        # 背景：类中心到类中心的距离
+        # 前景：实例到类中心的距离、实例到实例的距离
+        # 其他：类中心到其他类的距离
         c2c_dist_B, i2c_dist_F, i2i_dist_F, c2other_dist = self.alignment_loss(kwargs.get('alignment_params'))
 
         output = {'c2c_dist_B': c2c_dist_B, 'i2c_dist_F': i2c_dist_F, 'i2i_dist_F': i2i_dist_F, 'c2other_dist': c2other_dist}
@@ -515,9 +532,9 @@ class IW_MaxSquareloss(nn.Module):
         # prob -= 0.5
         N, C, H, W = prob.size()
         mask = (prob != self.ignore_index)
-        maxpred, argpred = torch.max(prob, 1)
-        mask_arg = (maxpred != self.ignore_index)
-        argpred = torch.where(mask_arg, argpred, torch.ones(1).to(prob.device, dtype=torch.long) * self.ignore_index)
+        maxpred, argpred = torch.max(prob, 1)   # 计算最大概率和对应类别序号
+        mask_arg = (maxpred != self.ignore_index)   # 计算忽略类别的掩码
+        argpred = torch.where(mask_arg, argpred, torch.ones(1).to(prob.device, dtype=torch.long) * self.ignore_index) # 用忽略类别的掩码，将忽略的
         if label is None:
             label = argpred
         weights = []
