@@ -20,7 +20,7 @@ from datasets.cityscapes_Dataset import City_Dataset
 from datasets.cityscapes_Dataset import colorize_mask
 
 # from utils.losses import feat_reg_ST_loss, IW_MaxSquareloss
-from utils.losses_modified import feat_reg_ST_loss, IW_MaxSquareloss
+from utils.losses import feat_reg_ST_loss, IW_MaxSquareloss
 from tools.train_source import Trainer, str2bool, argparse, add_train_args, init_args, datasets_path
 
 DEBUG = False
