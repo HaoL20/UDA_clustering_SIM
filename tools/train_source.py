@@ -24,16 +24,16 @@ from datasets.synthia_Dataset import SYNTHIA_DataLoader
 
 DEBUG = False
 ITER_MAX = 5000
-USE_TARGET_VAL = True # 是否使用目标域进行测试
+USE_TARGET_VAL = True  # 是否使用目标域进行测试
 
 datasets_path = {
     'cityscapes': {
-        'data_root_path': '/home/haol/data/Dataset/original/cityscape',
+        'data_root_path': '/home/haol/data/Dataset/公开数据集/cityscape',
         'list_path': './datasets/Cityscapes',
     },
 
     'gta5': {
-        'data_root_path': '/home/haol/data/Dataset/original/GTA5',
+        'data_root_path': '/home/haol/data/Dataset/公开数据集/gta5_deeplab',
         'list_path': './datasets/GTA5',
     },
 
@@ -65,12 +65,11 @@ class Trainer():
         self.color_jitter = args.color_jitter
         self.gaussian_blur = args.gaussian_blur
 
-        dirs = os.path.dirname(self.args.checkpoint_dir).split('/')
-        if len(dirs[-1]) > 0:   # 切分的checkpoint_dir可能最后一个元素为空
-            self.exp_name = dirs[-1]    # 伪标签保存的路径需要用到实验名称
+        dirs = self.args.checkpoint_dir.split('/')
+        if len(dirs[-1]) > 0:  # 切分的checkpoint_dir可能最后一个元素为空
+            self.exp_name = dirs[-1]  # 伪标签保存的路径需要用到实验名称
         else:
             self.exp_name = dirs[-2]
-
         self.current_MIoU = 0
         self.best_MIou = 0
         self.best_source_MIou = 0
@@ -135,7 +134,7 @@ class Trainer():
             self.dataloader.val_loader = self.target_val_dataloader
         ###
 
-        self.dataloader.num_iterations = min(self.dataloader.num_iterations, ITER_MAX)      # 一个epoch的迭代次数
+        self.dataloader.num_iterations = min(self.dataloader.num_iterations, ITER_MAX)  # 一个epoch的迭代次数
         self.epoch_num = ceil(self.args.iter_max / self.dataloader.num_iterations) if self.args.iter_stop is None else \
             ceil(self.args.iter_stop / self.dataloader.num_iterations)  # 总epoch数量
 
@@ -527,7 +526,7 @@ class Trainer():
 
 def add_train_args(arg_parser):
     # Path related arguments
-    arg_parser.add_argument('--dataset', default='cityscapes', type=str, help='dataset choice')  # 需要训练的数据集（源域）名称，但是在UDA里面，这里是目标域的数据集名称了
+    arg_parser.add_argument('--dataset', default='cityscapes', type=str, help='dataset choice')  # 需要训练的数据集（源域）名称，在UDA里面，这里是目标域的数据集名称
     arg_parser.add_argument('--data_root_path', type=str, default=None, help="the path to dataset (source)")  # 需要训练的数据集（源域）路径，同理在UDA里面，这里是目标域的数据集路径
     arg_parser.add_argument('--list_path', type=str, default=None, help="the path to data split lists")  # 需要训练的数据集的list文件
     arg_parser.add_argument('--checkpoint_dir', default="./log/train", help="the path to ckpt file")  # train的日志和模型路径
@@ -546,11 +545,17 @@ def add_train_args(arg_parser):
     arg_parser.add_argument('--batch_size_per_gpu', default=1, type=int, help='input batch size')
 
     # dataset related arguments
+    # arg_parser.add_argument('--base_size', default="1280,720", type=str, help='crop size of image')  # base_size 没卵用
+    # arg_parser.add_argument('--crop_size', default="1280,720", type=str, help='base size of image')  # crop_size 它不是裁剪的大大小，是resize的大小！
+    # arg_parser.add_argument('--target_base_size', default="1024,512", type=str, help='crop size of target image')
+    # arg_parser.add_argument('--target_crop_size', default="1024,512", type=str, help='base size of target image')
+    # # 这个只有在train和val的数据集不同的时候才用到，因为不同的时候会将dataloder的val换成target域，这时候需要指定target_crop_size，例如在GTA5上train的size和City的size是不一样的。
+
+    # for test
     arg_parser.add_argument('--base_size', default="1280,720", type=str, help='crop size of image')
-    arg_parser.add_argument('--crop_size', default="1280,720", type=str, help='base size of image')  # crop_size 它不是裁剪的大大小，是resize的大小！
-    arg_parser.add_argument('--target_base_size', default="1024,512", type=str, help='crop size of target image')  # base_size 没卵用
+    arg_parser.add_argument('--crop_size', default="1280,720", type=str, help='base size of image')
+    arg_parser.add_argument('--target_base_size', default="1024,512", type=str, help='crop size of target image')
     arg_parser.add_argument('--target_crop_size', default="1024,512", type=str, help='base size of target image')
-    # 这个只有在train和val的数据集不同的时候才用到，因为不同的时候会将dataloder的val换成target域，这时候需要指定target_crop_size，例如在GTA5上train的size和City的size是不一样的。
 
     arg_parser.add_argument('--num_classes', default=19, type=int, help='num class of mask')
     arg_parser.add_argument('--data_loader_workers', default=4, type=int, help='num_workers of Dataloader')

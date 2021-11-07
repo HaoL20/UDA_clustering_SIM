@@ -9,7 +9,6 @@ from tqdm import tqdm
 from PIL import Image
 from distutils.version import LooseVersion
 import numpy as np
-import collections
 import sys
 
 sys.path.append(os.path.abspath('.'))
@@ -17,10 +16,8 @@ sys.path.append(os.path.abspath('.'))
 from datasets.synthia_Dataset import SYNTHIA_Dataset
 from datasets.gta5_Dataset import GTA5_Dataset
 from datasets.cityscapes_Dataset import City_Dataset
-from datasets.cityscapes_Dataset import colorize_mask
 
-# from utils.losses import feat_reg_ST_loss, IW_MaxSquareloss
-from utils.losses import feat_reg_ST_loss, IW_MaxSquareloss
+from utils.losses import feat_reg_ST_loss
 from tools.train_source import Trainer, str2bool, argparse, add_train_args, init_args, datasets_path
 
 DEBUG = False
@@ -36,66 +33,26 @@ def memory_check(log_string):
 
 def add_UDA_train_args(arg_parser):
     # shared
-    # arg_parser.add_argument('--use_source_gt', default=False, type=str2bool, help='use source label or segmented image for pixel/feature classification')
     arg_parser.add_argument('--centroid_smoothing', default=-1, type=float, help="centroid smoothing coefficient, negative to disable")
     arg_parser.add_argument('--source_dataset', default='gta5', type=str, choices=['gta5', 'synthia'], help='source dataset choice')
     arg_parser.add_argument('--source_split', default='train', type=str, help='source datasets split')
     arg_parser.add_argument('--init_round', type=int, default=0, help='init_round')
     arg_parser.add_argument('--round_num', type=int, default=1, help="num round")
     arg_parser.add_argument('--epoch_each_round', type=int, default=2, help="epoch each round")
-
     arg_parser.add_argument('--logging_interval', type=int, default=1, help="interval in steps for logging")
     arg_parser.add_argument('--save_inter_model', type=str2bool, default=False, help="save model at the end of each epoch or not")
 
     # pseudo-labels
     arg_parser.add_argument('--no_uncertainty', type=str2bool, default=True, help="use uncertainty in the pesudo-label selection, default true'")
-    arg_parser.add_argument('--tau-p', default=0.70, type=float, help='confidece threshold for positive pseudo-labels, default 0.70')
-    arg_parser.add_argument('--tau-n', default=0.05, type=float, help='confidece threshold for negative pseudo-labels, default 0.05')
-    arg_parser.add_argument('--kappa-p', default=0.05, type=float, help='uncertainty threshold for positive pseudo-labels, default 0.05')
-    arg_parser.add_argument('--kappa-n', default=0.005, type=float, help='uncertainty threshold for negative pseudo-labels, default 0.005')
-    arg_parser.add_argument('--temp-nl', default=2.0, type=float, help='temperature for generating negative pseduo-labels, default 2.0')
 
     # clustering
-    # arg_parser.add_argument('--lambda_cluster', default=0., type=float, help="lambda of clustering loss")
-    # arg_parser.add_argument('--lambdas_cluster', default=None, type=str, help="lambda intra-domain source, lambda intra-domain target, lambda inter-domain")
-    arg_parser.add_argument('--lambda_things', default=1, type=float, help="norm order of feature things loss")
+    arg_parser.add_argument('--lambda_things', default=1, type=float, help="things loss 权重")
     arg_parser.add_argument('--lambda_stuff', default=1, type=float, help="norm order of feature stuff loss")
-    arg_parser.add_argument('--lambda_c2other', default=1, type=float, help="norm order of feature c2other loss")
+    arg_parser.add_argument('--lambda_entropy', default=1, type=float, help="norm order of feature c2other loss")
     arg_parser.add_argument('--norm_order', default=1, type=int, help="norm order of feature clustering loss")
-
-    # orthogonality
-    # arg_parser.add_argument('--lambda_ortho', default=0., type=float, help="lambda of orthogonality loss")
-    # arg_parser.add_argument('--ortho_temp', default=1., type=float, help="temperature for similarity based-distribution")
-
-    # sparsity
-    # arg_parser.add_argument('--lambda_sparse', default=0., type=float, help="lambda of sparsity loss")
-    # arg_parser.add_argument('--sparse_norm_order', default=2., type=float, help="sparsity loss exponent")
-    # arg_parser.add_argument('--sparse_rho', default=0.5, type=float, help="sparsity loss constant threshold")
-
-    # off-the-shelf entropy loss
-    arg_parser.add_argument('--lambda_entropy', type=float, default=0., help="lambda of target loss")
-    arg_parser.add_argument('--IW_ratio', type=float, default=0.2, help='the ratio of image-wise weighting factor')
+    arg_parser.add_argument('--deque_capacity_factor', default=1., type=float, help="队列容量因子")
 
     return arg_parser
-
-
-def init_UDA_args(args):
-    def str2none(l):
-        l = [l] if not isinstance(l, list) else l
-        for i, el in enumerate(l):
-            if el == 'None':
-                l[i] = None
-        return l if len(l) > 1 else l[0]
-
-    def str2float(l):
-        for i, el in enumerate(l):
-            try:
-                l[i] = float(el)
-            except (ValueError, TypeError):
-                l[i] = el
-        return l
-
-    return args
 
 
 class UDATrainer(Trainer):
@@ -150,17 +107,14 @@ class UDATrainer(Trainer):
         self.no_uncertainty = args.no_uncertainty
 
         ### LOSSES ###
+
+        # ignore_index = -1, num_class = 19, deque_capacity_factor = 2.0, feat_channel = 2048, device = 'cuda'):
         self.feat_reg_ST_loss = feat_reg_ST_loss(ignore_index=-1,
                                                  num_class=self.args.num_classes,
+                                                 deque_capacity_factor=self.args.deque_capacity_factor,
+                                                 feat_channel=2048,
                                                  device=self.device)
         self.feat_reg_ST_loss.to(self.device)
-
-        self.use_em_loss = self.args.lambda_entropy != 0.
-        if self.use_em_loss:
-            self.entropy_loss = IW_MaxSquareloss(ignore_index=-1,
-                                                 num_class=self.args.num_classes,
-                                                 ratio=self.args.IW_ratio)
-            self.entropy_loss.to(self.device)
 
         self.loss_kwargs = {}
         self.alignment_params = {'norm_order': args.norm_order}
@@ -190,11 +144,9 @@ class UDATrainer(Trainer):
                 image = Variable(image).to(self.device)
             with torch.no_grad():
                 cur_out_prob = []  # 输出的置信度
-                cur_out_prob_nl = []  # 带温度系数的出的置信度
                 for _ in range(f_pass):  # f_pass前向传播
                     outputs = self.model(image)[0]  # b,c,h,w
                     cur_out_prob.append(F.softmax(outputs, dim=1))  # 用于选择正伪标签
-                    # cur_out_prob_nl.append(F.softmax(outputs / args.temp_nl, dim=1))  # 用于选择负伪标签
             if f_pass == 1:
                 out_prob = cur_out_prob[0]
                 max_value, max_idx = torch.max(out_prob, dim=1)  # 最大的预测值和对应的索引      b,h,w
@@ -206,68 +158,48 @@ class UDATrainer(Trainer):
                 max_value, max_idx = torch.max(out_prob_mean, dim=1)  # 最大的预测值和对应的索引      b,h,w
                 max_std = out_prob_std.gather(1, max_idx.unsqueeze(dim=1)).squeeze(1)  # 最大预测值的方差         b,h,w
 
-            # out_prob_nl = torch.stack(cur_out_prob_nl)
-            # out_std_nl = torch.std(out_prob_nl, dim=0)  # 负伪标签的方差      b,c,h,w
-            # out_prob_nl_mean = torch.mean(out_prob_nl, dim=0)  # 负伪标签的平均置信度
-            # min_value, min_idx = torch.min(out_prob_nl_mean, dim=1)  # 最小的预测值和对应的索引      b,h,w
-            # min_std = out_std_nl.gather(1, min_idx.unsqueeze(dim=1)).squeeze(1)  # 最小预测值的方差         b,h,w
-
-            def gen_label(value, idx, std, conf_thre, uncert_thre, is_nl, ignore_index):
-                # value,idx:预测值和对应的索引
-                if is_nl:
-                    save = self.n_pseudo_label_dir
-                    if not args.no_uncertainty:  # 选择满足置信度和不确定性条件的负伪标签
-                        selected_idx = (value <= conf_thre) * (std < uncert_thre)  # b,h,w
-                    else:
-                        selected_idx = value <= args.conf_thre
+            thre_conf = []  # 置信度阈值, 长度为num_classes的list
+            thre_std = []  # 方差阈值
+            for i in range(self.args.num_classes):
+                mask_i = (max_idx == i)
+                mid = max_value[mask_i].size(0) // 2
+                if mid == 0:
+                    thre_conf.append(0)
+                    thre_std.append(0)
                 else:
-                    save = self.pseudo_label_dir
+                    # 计算置信度阈值
+                    max_value_i, _ = torch.sort(max_value[mask_i])
+                    thre_conf.append(min(0.9, max_value_i[mid]))
 
-                    if not args.no_uncertainty:  # 选择满足置信度和不确定性条件的伪标签
-                        selected_idx = (value >= conf_thre) * (std < uncert_thre)  # b,h,w
-                    else:
-                        selected_idx = value >= args.conf_thre
-                unselected_idx = ~selected_idx  # 取反，选择所以不满足条件的像素点
+                    # 计算方差阈值
+                    max_std_i, _ = torch.sort(max_std[mask_i])
+                    thre_std.append(max(0.01, max_std_i[mid]))
 
-                pseudo_label = idx.clone().cpu()
-                pseudo_maxstd = std.clone().cpu()
+            # 计算每一个点的阈值
+            thre_conf = torch.tensor(thre_conf).cuda()[max_idx].detach()  # (num_classes) => (b,h,w)
+            thre_std = torch.tensor(thre_std).cuda()[max_idx].detach()
 
-                pseudo_label[unselected_idx] = 255  # 未被选择的像素赋值为255
-                pseudo_maxstd[unselected_idx] = 1000  # 未被选择的像素的方差赋值一个较大的方差
+            if not args.no_uncertainty:  # 选择满足置信度和不确定性条件的伪标签
+                selected_idx = (max_value >= thre_conf) * (max_std < thre_std)  # b,h,w
+            else:
+                selected_idx = max_value >= thre_conf
+            unselected_idx = ~selected_idx  # 取反，选择所以不满足条件的像素点
 
-                # max_class_len = [0.01] * self.args.num_classes  # 源域中每个类别平均占比先验信息
-                # ######
-                # if args.class_blnc and self.current_epoch < args.class_blnc - 1:  # 如果选择类别平衡，并且当前迭代次数少于最大需要类别平衡的迭代次数
-                #     for class_idx in range(self.args.num_classes):
-                #         cur_max_class_len = int(max_class_len[class_idx] * 512 * 1024)  # 当前类别平均像素点的先验信息
-                #         class_pos = np.where(pseudo_label == class_idx)  # 当前类别在伪标签中的位置
-                #         class_maxstd = pseudo_maxstd[class_pos]  # 当前类别的方差
-                #         class_maxstd_sort = np.sort(class_maxstd)  # 排序后的方差
-                #
-                #         class_len = len(class_pos[0])  # 当前类别像素点的数量
-                #         if class_len > 0:
-                #             class_len_blnc = min(cur_max_class_len, class_len)  # 类别平衡后的像素点的数量
-                #
-                #             class_maxstd_sort_max = class_maxstd_sort[class_len_blnc - 1]  # 类别平衡筛选后的最大方差
-                #             unselected_idx = pseudo_maxstd > class_maxstd_sort_max  # 选取大于方差的idx
-                #             pseudo_label[unselected_idx] = self.ignore_index  # 大于方差的idx分配为忽略的标签
+            pseudo_label = max_idx.clone().cpu()
+            pseudo_label[unselected_idx] = self.ignore_index  # 未被选择的像素赋值为ignore_index
 
-                for b in range(self.args.batch_size):
-                    pseudo_name = id_gt[b]
-                    label = pseudo_label[b]
-                    output = np.asarray(label, dtype=np.uint8)
-                    output = Image.fromarray(output)
-                    # output = colorize_mask(output, self.args.num_classes)
-                    save_path = save + pseudo_name
-                    save_dir = os.path.dirname(save_path)
-                    if not os.path.exists(save_dir):
-                        os.makedirs(save_dir)
-                    output.save(save_path)
-
-            # 生成正伪标签
-            gen_label(max_value, max_idx, max_std, args.tau_p, args.kappa_p, is_nl=False, ignore_index=self.ignore_index)
-            # 生成负伪标签
-            # gen_label(min_value, min_idx, min_std, args.tau_n, args.kappa_n, is_nl=True)
+            batch_size = max_idx.size(0)
+            for b in range(batch_size):
+                pseudo_name = id_gt[b]
+                label = pseudo_label[b]
+                output = np.asarray(label, dtype=np.uint8)
+                output = Image.fromarray(output)
+                # output = colorize_mask(output, self.args.num_classes)
+                save_path = self.pseudo_label_dir + pseudo_name
+                save_dir = os.path.dirname(save_path)
+                if not os.path.exists(save_dir):
+                    os.makedirs(save_dir)
+                output.save(save_path)
 
     def updata_target_dataloader(self):
 
@@ -320,7 +252,6 @@ class UDATrainer(Trainer):
 
         # train
         self.train_round()
-
         self.writer.close()
 
     def train_round(self):
@@ -329,9 +260,7 @@ class UDATrainer(Trainer):
             self.logger.info("epoch_each_round: {}".format(self.args.epoch_each_round))
 
             self.epoch_num = (self.current_round + 1) * self.args.epoch_each_round
-            self.n_pseudo_label_dir = os.path.join(args.data_root_path, self.exp_name, 'negative-pseudo-label', str(self.current_round))
             self.pseudo_label_dir = os.path.join(args.data_root_path, self.exp_name, 'pseudo-label', str(self.current_round))
-            # if self.current_round > 0:
             if not os.path.exists(self.pseudo_label_dir):
                 self.gen_pseudo_label()  # 生成伪标签
             else:
@@ -348,149 +277,130 @@ class UDATrainer(Trainer):
 
         self.logger.info("Training one epoch...")
         self.Eval.reset()
-
         self.model.train()
 
-        ### Logging setup ###
-        log_list, log_strings = [None], ['Source_loss_ce']
-
-        log_list += [None] * 3
-        log_strings += ['thing_alignment_loss', 'stuff_alignment_loss', 'contrastive_loss']
-
-        if self.use_em_loss:
-            log_strings.append('EM_loss')
-            log_list.append(None)
-
-        log_string = 'epoch{}-batch-{}:' + '={:3f}-'.join(log_strings) + '={:3f}'
+        ### 日志设定 ###
+        log_dic = {}
 
         batch_idx = 0
         for batch_s, batch_t in tqdm_epoch:
             self.poly_lr_scheduler(optimizer=self.optimizer, init_lr=self.args.lr)
             self.writer.add_scalar('learning_rate', self.optimizer.param_groups[0]["lr"], self.current_iter)
-            if self.current_iter < 1: memory_check('Start (step)')
+            if self.current_iter < 1:
+                memory_check('Start (step)')
             #######################
             # Source forward step #
             #######################
 
             # train data (labeled)
-            x, y, _ = batch_s
+            x, y, _ = batch_s  # size:(B 3 H W) (B H W)
             if self.cuda:
                 x, y = Variable(x).to(self.device), Variable(y).to(device=self.device, dtype=torch.long)
 
-            if self.current_iter < 1: memory_check('Dataloader Source')
+            if self.current_iter < 1:
+                memory_check('Dataloader Source')
 
             ########################
             # model output ->  list of:  1) pred; 2) feat from encoder's output
             pred_and_feat = self.model(x)
-            pred_source, feat_source = pred_and_feat
+            pred_source, feat_source = pred_and_feat  # size: (B  C  H  W)  (B  F  h  w)
+            pred_source_softmax = F.softmax(pred_source, dim=1)  # size: (B  C  H  W)
             ########################
 
-            if self.current_iter < 1: memory_check('Model Source')
+            if self.current_iter < 1:
+                memory_check('Model Source')
 
-            # max_value, max_idx = torch.max(F.softmax(pred_source, dim=1), dim=1)
-            # output = np.asarray(max_idx.clone().cpu(), dtype=np.uint8)
-            # output = colorize_mask(output[0], self.args.num_classes)
-            # output.save("/home/haol/y_s_{}.png".format(batch_idx))
             ##################################
             # Source supervised optimization #
             ##################################
 
-            y = torch.squeeze(y, 1)
+            y = torch.squeeze(y, 1)  # size:(B H W) => (B 1 H W)
             loss = self.loss(pred_source, y)  # cross-entropy loss from train_source.py
-            loss_ = loss        # 源域的交叉熵损失
+            loss_ = loss  # 源域的交叉熵损失
 
-            loss_.backward(retain_graph=True)
+            loss_.backward()
 
             # log
-            log_ind = 0
-            log_list[log_ind] = loss.item()
-            log_ind += 1
+            log_dic['Source_ce_loss'] = loss.item()
 
-            if self.current_iter < 1: memory_check('End Source')
+            if self.current_iter < 1:
+                memory_check('End Source')
 
             #######################
             # Target forward step #
             #######################
 
             # target data (unlabeld)
-            x, p_y, _ = batch_t
+            x, p_y, _ = batch_t  # 图片、伪标签、文件名
             if self.cuda:
-                # x = Variable(x).to(self.device)
                 x, p_y = Variable(x).to(self.device), Variable(p_y).to(device=self.device, dtype=torch.long)
 
-            if self.current_iter < 1: memory_check('Dataloader Target')
-            #
-            # output = np.asarray(p_y.clone().cpu(), dtype=np.uint8)
-            # output = colorize_mask(output[0], self.args.num_classes)
-            # output.save("/home/haol/p_y_{}.png".format(batch_idx))
+            if self.current_iter < 1:
+                memory_check('Dataloader Target')
 
             ########################
-            # model output ->  list of:  1) pred; 2) feat from encoder's output
-            pred_and_feat = self.model(x)  # creates the graph
-            pred_target, feat_target = pred_and_feat
+            pred_and_feat = self.model(x)  # model output ->  list of:  1) pred; 2) feat from encoder's output
+            pred_target, feat_target = pred_and_feat  # size: (B  C  H  W)  (B  F  h  w)
+            pred_target_softmax = F.softmax(pred_target, dim=1)  # size: (B  C  H  W)
             ########################
 
-            if self.current_iter < 1: memory_check('Model Target')
+            if self.current_iter < 1:
+                memory_check('Model Target')
 
+            # 临时可视化标签图片
             # max_value, max_idx = torch.max(F.softmax(pred_target, dim=1), dim=1)
             # output = np.asarray(max_idx.clone().cpu(), dtype=np.uint8)
             # output = colorize_mask(output[0], self.args.num_classes)
             # output.save("/home/haol/pred_target_{}.png".format(batch_idx))
+
             #####################
             # Adaptation Losses #
             #####################
-
             # Set some inputs to the adaptation modules
-            self.loss_kwargs['source_prob'] = F.softmax(pred_source, dim=1) # 源域预测结果softmax
-            self.loss_kwargs['target_prob'] = F.softmax(pred_target, dim=1) # 目标域预测结果softmax
-            self.loss_kwargs['source_feat'] = feat_source                   # 源域的中间特征
-            self.loss_kwargs['target_feat'] = feat_target                   # 目标域的中间特征
-            self.loss_kwargs['source_gt'] = y                               # 源域的标签
-            self.loss_kwargs['target_gt'] = p_y                             # 目标域的伪标签
-            self.loss_kwargs['smo_coeff'] = args.centroid_smoothing         # 平均指数移动的参数
+            self.loss_kwargs['source_prob'] = pred_source_softmax  # 源域预测结果softmax,
+            self.loss_kwargs['target_prob'] = pred_target_softmax  # 目标域预测结果softmax
+            self.loss_kwargs['source_feat'] = feat_source  # 源域的中间特征
+            self.loss_kwargs['target_feat'] = feat_target  # 目标域的中间特征
+            self.loss_kwargs['source_label'] = y  # 源域的标签
+            self.loss_kwargs['target_label'] = p_y  # 目标域的伪标签
+            self.loss_kwargs['smo_coeff'] = args.centroid_smoothing  # 平均指数移动的参数
 
-            # Pass the input dict to the adaptation full loss
+            # 传入参数，计算当前批次的loss
             loss_dict = self.feat_reg_ST_loss(**self.loss_kwargs)
+            stuff_alignment_loss, thing_alignment_loss, EM_loss = loss_dict['stuff_alignment_loss'], loss_dict['thing_alignment_loss'], loss_dict['EM_loss']
 
-            c2c_dist_B, i2c_dist_F, i2i_dist_F, c2other_dist = loss_dict['c2c_dist_B'], loss_dict['i2c_dist_F'], loss_dict['i2i_dist_F'], loss_dict['c2other_dist']
-            log_strings += ['thing_alignment_loss', 'stuff_alignment_loss', 'contrastive_loss']
-            thing_alignment_loss = self.args.lambda_things * c2c_dist_B
-            stuff_alignment_loss = self.args.lambda_stuff * (i2c_dist_F + i2i_dist_F)
+            thing_alignment_loss = self.args.lambda_things * thing_alignment_loss
+            stuff_alignment_loss = self.args.lambda_stuff * stuff_alignment_loss
+            em_loss = self.args.lambda_entropy * EM_loss
 
-            contrastive_loss = thing_alignment_loss + stuff_alignment_loss - self.args.lambda_c2other * c2other_dist
-            retain_graph = self.use_em_loss
-            if contrastive_loss.item() != 0:
-                contrastive_loss.backward(retain_graph=retain_graph)
-            if self.current_iter < 1: memory_check('contrastive_loss Loss')
-            # log
-            log_list[log_ind:log_ind + 3] = [thing_alignment_loss.item(), stuff_alignment_loss.item(), contrastive_loss.item()]
-            log_ind += 3
+            total_loss = thing_alignment_loss + stuff_alignment_loss + em_loss
+            total_loss.backward()
 
-            if self.use_em_loss:
-                em_loss = self.args.lambda_entropy * self.entropy_loss(pred_target, F.softmax(pred_target, dim=1))
-                em_loss.backward()
-                if self.current_iter < 1: memory_check('Entropy Loss')
-                # log
-                log_list[log_ind] = em_loss.item()
-                log_ind += 1
+            # 保存当前loss
+
+            log_dic['Stuff_alignment_loss'] = stuff_alignment_loss.item()
+            log_dic['Thing_alignment_loss'] = thing_alignment_loss.item()
+            log_dic['EM_loss'] = em_loss.item()
+            log_dic['Target_loss'] = total_loss.item()
+            log_string = 'epoch{}-batch-{}:' + '={:3f}-'.join(log_dic.keys()) + '={:3f}'
+
+            # logging
+            if batch_idx % self.args.logging_interval == 0:
+                self.logger.info(log_string.format(self.current_epoch, batch_idx, *log_dic.values()))
+                for name, elem in log_dic.items():
+                    self.writer.add_scalar(name, elem, self.current_iter)
 
             self.optimizer.step()
             self.optimizer.zero_grad()
 
-            # logging
-            if batch_idx % self.args.logging_interval == 0:
-                self.logger.info(log_string.format(self.current_epoch, batch_idx, *log_list))
-                for name, elem in zip(log_strings, log_list):
-                    self.writer.add_scalar(name, elem, self.current_iter)
+            if self.current_iter < 1:
+                memory_check('End (step)')
 
             batch_idx += 1
-
             self.current_iter += 1
 
-            if self.current_iter < 1: memory_check('End (step)')
-
         tqdm_epoch.close()
-
+        self.feat_reg_ST_loss.reset()
         # eval on source domain
         # self.validate_source()
 
@@ -502,9 +412,9 @@ class UDATrainer(Trainer):
 if __name__ == '__main__':
     assert LooseVersion(torch.__version__) >= LooseVersion('1.0.0'), 'PyTorch>=1.0.0 is required'
 
-    file_os_dir = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(file_os_dir)
-    os.chdir('..')
+    file_os_dir = os.path.dirname(os.path.abspath(__file__))  # ./tools路径
+    os.chdir(file_os_dir)  # 工作目录切换到./tools路径
+    os.chdir('..')  # 工作目录切换到./tools路径的上一级目录
 
     arg_parser = argparse.ArgumentParser()
     arg_parser = add_train_args(arg_parser)
@@ -512,7 +422,6 @@ if __name__ == '__main__':
 
     args = arg_parser.parse_args()
     args, train_id, logger = init_args(args)
-    args = init_UDA_args(args)
     args.source_data_path = datasets_path[args.source_dataset]['data_root_path']
     args.source_list_path = datasets_path[args.source_dataset]['list_path']
 

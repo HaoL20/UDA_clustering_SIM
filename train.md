@@ -40,11 +40,9 @@ python tools/train_source.py --backbone "resnet101" --dataset "synthia" --num_cl
 
 
 # UDA
-python tools/train_UDA_SIM.py 
-
 python tools/train_UDA_SIM.py --source_dataset gta5 --num_classes 19 --data_loader_workers 4 --backbone resnet101 \
---round_num 5 --lr 2.5e-4 --lambda_things 1 --lambda_stuff 1 --lambda_c2other 0.1  --resize yes \
---checkpoint_dir ./log/UDA/GTA2city/ \
+--round_num 5 --lr 2.5e-4 --lambda_things 1 --lambda_stuff 1 --lambda_entropy 1  --resize yes \
+--checkpoint_dir ./log/UDA/GTA2city_tranGTA_thing(Entropy_1.0)_stuff(1.0)_me(Entropy_1.0)/ \
 --gaussian_blur yes --color_jitter yes \
 --pretrained_ckpt_file ./log/train/source_only/GTA5/resnet/GTA5_resnet101_with_CJ/gta5best.pth \
 --no_uncertainty no
