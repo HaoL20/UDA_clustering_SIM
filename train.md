@@ -41,8 +41,24 @@ python tools/train_source.py --backbone "resnet101" --dataset "synthia" --num_cl
 
 # UDA
 python tools/train_UDA_SIM.py --source_dataset gta5 --num_classes 19 --data_loader_workers 4 --backbone resnet101 \
---round_num 5 --lr 2.5e-4 --lambda_things 1 --lambda_stuff 1 --lambda_entropy 1  --resize yes \
---checkpoint_dir ./log/UDA/GTA2city_tranGTA_thing(Entropy_1.0)_stuff(1.0)_me(Entropy_1.0)/ \
+--round_num 5 --lr 2.5e-4 --lambda_things 0.01 --lambda_stuff 0.01 --lambda_entropy 0.01  --resize yes \
+--checkpoint_dir ./log/UDA/debug_GTA2city_tranGTA_thing-Squares-0.01_stuff-0.01_me-Squares-0.01_nomask \
 --gaussian_blur yes --color_jitter yes \
 --pretrained_ckpt_file ./log/train/source_only/GTA5/resnet/GTA5_resnet101_with_CJ/gta5best.pth \
---no_uncertainty no
+--no_uncertainty yes
+
+
+
+python tools/train_UDA_SIM.py --source_dataset gta5 --num_classes 19 --data_loader_workers 4 --backbone resnet101 \
+--round_num 5 --lr 2.5e-4 --lambda_things 0.001 --lambda_stuff 0.001 --lambda_entropy 0.001  --resize yes \
+--checkpoint_dir ./log/UDA/GTA2city_tranGTA_thing-Squares-_stuff-0.001_me-Entropy-0.001 \
+--gaussian_blur yes --color_jitter yes \
+--pretrained_ckpt_file ./log/train/source_only/GTA5/resnet/GTA5_resnet101_with_CJ/gta5best.pth \
+--no_uncertainty yes
+
+python tools/train_UDA_SIM.py --source_dataset gta5 --num_classes 19 --data_loader_workers 4 --backbone resnet101 \
+--round_num 5 --lr 2.5e-4 --lambda_things 0.01 --lambda_stuff 0.01 --lambda_entropy 0.01  --resize yes \
+--checkpoint_dir ./log/UDA/GTA2city_thing-Squares=0.01_stuff=0.01_me-Entropy=0.01_use-gta5_deeplab \
+--gaussian_blur yes --color_jitter yes \
+--pretrained_ckpt_file ./log/train/source_only/GTA5/resnet/GTA5_resnet101_with_CJ/gta5best.pth \
+--no_uncertainty yes
