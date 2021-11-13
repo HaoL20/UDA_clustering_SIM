@@ -294,8 +294,8 @@ class feat_reg_ST_loss(nn.Module):
                 if loss_type == 'Entropy':  # 最大化entropy：-p *log(p)
                     matrix = torch.mm(target_feat_i, source_feat_i.t())  # size: Nt_i * deque_len_i
                     matrix_softmax = torch.softmax(matrix, dim=1)
-                    matrix_log_softmax = torch.log_softmax(matrix, dim=1)
-                    sim_loss += -torch.mean((matrix_softmax * matrix_log_softmax)) * weight  # matrix_log_softmax替换torch.log(matrix_softmax)可以防止溢出
+                    # matrix_log_softmax = torch.log_softmax(matrix, dim=1)
+                    sim_loss += -torch.mean((matrix_softmax * torch.log2(matrix_softmax+1e-30))) * weight  # matrix_log_softmax替换torch.log(matrix_softmax)可以防止溢出
 
                 if loss_type == 'Squares':  # 最大化：1-p^2
                     matrix = torch.mm(target_feat_i, source_feat_i.t())  # size: Nt_i * deque_len_i
@@ -335,14 +335,13 @@ class feat_reg_ST_loss(nn.Module):
 
         weights = torch.tensor(weights).cuda()[arg_pred].detach()  # (num_class) ==> (N, 1, H, W)
         weights = weights.expand_as(pred_softmax)  # (N, 1, H, W) ==> (N, C, H, W)
-        mask = mask.expand_as(pred_softmax)  # (N, H, W) ==> (N, C, H, W)
 
         if loss_type == 'Squares':  # 1 - p^2
-            entropy_loss = torch.mean((1 - (torch.pow(pred_softmax, 2)) * weights)[mask])
+            entropy_loss = torch.mean((1 - (torch.pow(pred_softmax, 2)) * weights))
         if loss_type == 'Entropy':  # -p * log (p)
-            entropy_loss = -torch.mean((pred_softmax * torch.log(pred_softmax) * weights)[mask])
+            entropy_loss = -torch.mean((pred_softmax * torch.log2(pred_softmax+1e-30) * weights))
         if loss_type == 'FocalEntropy':  # -p * log (p) * (1 - p)^2
-            entropy_loss = -torch.mean((pred_softmax * torch.log(pred_softmax) * torch.pow(1 - pred_softmax, 2) * weights)[mask])
+            entropy_loss = -torch.mean((pred_softmax * torch.log2(pred_softmax+1e-30) * torch.pow(1 - pred_softmax, 2) * weights))
 
         return entropy_loss
 
@@ -363,7 +362,7 @@ class feat_reg_ST_loss(nn.Module):
         self.computer_things()
         self.computer_stuff(centroids_smoothing=smo_coeff)
         stuff_alignment_loss = self.stuff_alignment()
-        thing_alignment_loss = self.things_alignment(loss_type='Cosine')
+        thing_alignment_loss = self.things_alignment(loss_type='Squares')
         EM_loss = self.entropy_loss(pred_softmax=kwargs.get('target_prob'), label=kwargs.get('target_label'), loss_type='Entropy')
         output = {'stuff_alignment_loss': stuff_alignment_loss, 'thing_alignment_loss': thing_alignment_loss, 'EM_loss': EM_loss}
         return output
