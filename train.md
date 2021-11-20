@@ -62,3 +62,24 @@ python tools/train_UDA_SIM.py --source_dataset gta5 --num_classes 19 --data_load
 --gaussian_blur yes --color_jitter yes \
 --pretrained_ckpt_file ./log/train/source_only/GTA5/resnet/GTA5_resnet101_with_CJ/gta5best.pth \
 --no_uncertainty yes
+
+
+
+
+
+python tools/train_UDA_SIM.py --source_dataset gta5 --num_classes 19 --data_loader_workers 4 --backbone resnet101 \
+--round_num 5 --lr 2.5e-4 --lambda_things 0.01 --lambda_stuff 0.01 --lambda_entropy 0.01  --resize yes \
+--checkpoint_dir ./log/UDA/GTA2city/FB(Entropy)_BG(0.100)_Em(Squares=0.100)_use-gta5_deeplab \
+--gaussian_blur yes --color_jitter yes \
+--pretrained_ckpt_file ./log/train/source_only/GTA5/resnet/GTA5_resnet101_with_CJ/gta5best.pth \
+--no_uncertainty yes
+
+FB(Squares)_BG(0.100)_Em(Entropy=0.100)_use-gta5_deeplab
+
+python tools/train_UDA_SIM.py --source_dataset gta5 --num_classes 19 --data_loader_workers 4 --backbone resnet101 \
+--round_num 5 --lr 2.5e-4 --lambda_things 0.1 --lambda_stuff 0.1 --lambda_entropy 0.1  --resize yes \
+--thing_type Cosine --em_type Squares \
+--checkpoint_dir ./log/UDA/GTA2city/FB\(Cosine\)_BG\(0.100\)_Em\(Squares=0.100\)_use-gta5_deeplab_right_sour_label \
+--gaussian_blur yes --color_jitter yes \
+--pretrained_ckpt_file ./log/train/source_only/GTA5/resnet/GTA5_resnet101_with_CJ/gta5best.pth \
+--no_uncertainty yes
