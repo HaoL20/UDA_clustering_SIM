@@ -107,8 +107,8 @@ class feat_reg_ST_loss(nn.Module):
 
         # 标签处理
         if domain == 'source':  # 源域只计算预测正确的标签
-            # label_dws[label_dws != argmax_dws] = self.ignore_index  # 忽略预测错误
-            pass
+            label_dws[label_dws != argmax_dws] = self.ignore_index  # 忽略预测错误
+            # pass
         else:  # 目标域补全伪标签
             label_dws_ignore_mask = torch.eq(label_dws, self.ignore_index)  # 伪标签为空的mask
             label_dws[label_dws_ignore_mask] = argmax_dws.to(torch.float32)[label_dws_ignore_mask]  # 用预测结果补充伪标签的空缺
@@ -352,6 +352,8 @@ class feat_reg_ST_loss(nn.Module):
         # 计算self.source_feat、self.source_label
         alignment_params = kwargs.get('alignment_params')
         norm_order = alignment_params['norm_order']
+        thing_type = alignment_params['thing_type']
+        em_type = alignment_params['em_type']
         self.dist_func = norm_order
 
         self.feature_processing(feat=kwargs.get('source_feat'), softmax=kwargs.get('source_prob'), label=kwargs.get('source_label'), domain='source')
@@ -362,8 +364,8 @@ class feat_reg_ST_loss(nn.Module):
         self.computer_things()
         self.computer_stuff(centroids_smoothing=smo_coeff)
         stuff_alignment_loss = self.stuff_alignment()
-        thing_alignment_loss = self.things_alignment(loss_type='Squares')
-        EM_loss = self.entropy_loss(pred_softmax=kwargs.get('target_prob'), label=kwargs.get('target_label'), loss_type='Entropy')
+        thing_alignment_loss = self.things_alignment(loss_type=thing_type)
+        EM_loss = self.entropy_loss(pred_softmax=kwargs.get('target_prob'), label=kwargs.get('target_label'), loss_type=em_type)
         output = {'stuff_alignment_loss': stuff_alignment_loss, 'thing_alignment_loss': thing_alignment_loss, 'EM_loss': EM_loss}
         return output
 

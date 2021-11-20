@@ -50,6 +50,8 @@ def add_UDA_train_args(arg_parser):
     arg_parser.add_argument('--lambda_stuff', default=1, type=float, help="norm order of feature stuff loss")
     arg_parser.add_argument('--lambda_entropy', default=1, type=float, help="norm order of feature c2other loss")
     arg_parser.add_argument('--norm_order', default=1, type=int, help="norm order of feature clustering loss")
+    arg_parser.add_argument('--thing_type', default='Entropy', type=str, choices=['Entropy', 'Squares','Cosine'], help='things alignment loss type choice')
+    arg_parser.add_argument('--em_type', default='Entropy', type=str, choices=['Entropy', 'Squares'], help='em loss type choice')
     arg_parser.add_argument('--deque_capacity_factor', default=1., type=float, help="队列容量因子")
 
     return arg_parser
@@ -117,7 +119,7 @@ class UDATrainer(Trainer):
         self.feat_reg_ST_loss.to(self.device)
 
         self.loss_kwargs = {}
-        self.alignment_params = {'norm_order': args.norm_order}
+        self.alignment_params = {'norm_order': args.norm_order, 'thing_type': args.thing_type, 'em_type': args.em_type}
         self.loss_kwargs['alignment_params'] = self.alignment_params
 
         self.best_MIou, self.best_iter, self.current_iter, self.current_epoch = None, None, None, None
